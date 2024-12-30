@@ -1,6 +1,8 @@
 # HeyHeyBot 🎵
 HeyHeyBot is a simple Discord bot with soundboard functionality that enhances your voice chat experience. Whenever a user joins a voice chat, the bot plays a customizable greeting audio for that user, announcing their arrival to others in the channel. 
 
+Forked to setup auto-build.
+
 ## Features 🌟
 - **Personalized Greetings**: Assign a unique audio file for each user. When they join the voice chat, their greeting is played.
 - **Soundboard Functionality**: By sending `!playsound` to a chat on Discord server, you can request buttons with the names of available sounds. Clicking a button will play the corresponding sound in the voice chat.

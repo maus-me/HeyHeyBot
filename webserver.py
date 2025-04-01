@@ -1,19 +1,18 @@
-'''
+"""
 Flask webserver for uploading and deleting audio files.
 User can upload audio files to the server and delete them. Auth is required.
 Uploaded audio files are converted to .wav format and saved to the data/audio folder.
-'''
+"""
 
-from flask import Flask, request, Response, render_template, redirect, url_for, session, send_from_directory, jsonify
+from flask import Flask, request, render_template, redirect, url_for, session, send_from_directory, jsonify
 from werkzeug.utils import secure_filename
 import os
 import subprocess
 import secrets
 import glob
 import shutil
-from pydub import AudioSegment
-from pydub.playback import play
 
+# bot settings stored in .env
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -62,9 +61,9 @@ class WebApp:
         os.makedirs(self.greetings_folder, exist_ok=True)
 
     def run(self):
-        '''
+        """
         Starts the webserver with optional SSL support.
-        '''
+        """
         self.app.run(
             host=self.host, 
             port=self.port, 
@@ -74,17 +73,17 @@ class WebApp:
         )
 
     def get_greeting_versions(self, username):
-        '''
+        """
         Get all versions of greeting files for a username
-        '''
+        """
         pattern = os.path.join(self.greetings_folder, f"{username}.*.wav")
         files = glob.glob(pattern)
         return sorted(files, key=lambda x: int(x.split('.')[-2]) if x.split('.')[-2].isdigit() else 0)
 
     def get_next_version(self, username):
-        '''
+        """
         Get the next version number for a user's greeting file
-        '''
+        """
         existing_versions = self.get_greeting_versions(username)
         if not existing_versions:
             return 1
@@ -92,9 +91,9 @@ class WebApp:
         return last_version + 1
 
     def backup_existing_greeting(self, username):
-        '''
+        """
         Backup existing greeting file with versioning
-        '''
+        """
         current_file = os.path.join(self.greetings_folder, f"{username}.wav")
         if os.path.exists(current_file):
             next_version = self.get_next_version(username)
@@ -104,9 +103,9 @@ class WebApp:
         return False
 
     def set_version_as_current(self):
-        '''
+        """
         Sets a specific version as the current greeting for a user
-        '''
+        """
         if not session.get('logged_in'):
             return jsonify({'error': 'Not authorized'}), 401
 
@@ -135,9 +134,9 @@ class WebApp:
             return jsonify({'error': f'Failed to set version as current: {str(e)}'}), 500
 
     def filelist(self, filter=('wav'), folder=None):
-        '''
+        """
         Returns a list of all files in the specified folder, while filtering for the given file extension.
-        '''
+        """
         target_folder = folder if folder else self.app.config['UPLOAD_FOLDER']
         files = []
         for file in os.listdir(target_folder):
@@ -147,9 +146,9 @@ class WebApp:
         return files
 
     def get_greetings(self):
-        '''
+        """
         Returns a list of all greeting files with their associated usernames
-        '''
+        """
         if not session.get('logged_in'):
             return jsonify({'error': 'Not authorized'}), 401
 
@@ -177,9 +176,9 @@ class WebApp:
         return jsonify(greetings)
 
     def index(self):
-        '''
+        """
         Renders index.html with a list of all uploaded files.
-        '''
+        """
         if not session.get('logged_in'):
             return redirect(url_for('login'))
         else:
@@ -190,9 +189,9 @@ class WebApp:
                                 greeting_files=greeting_files)
         
     def login(self):
-        '''
+        """
         Displays login page when user is not logged in.
-        '''
+        """
         if request.method == 'POST':
             if request.form['username'] == self.credentials['username'] and request.form['password'] == self.credentials['password']:
                 session['logged_in'] = True
@@ -203,16 +202,16 @@ class WebApp:
             return render_template('login.html')
         
     def logout(self):
-        '''
+        """
         Logs user out.
-        '''
+        """
         session['logged_in'] = False
         return redirect(url_for('index'))
     
     def upload(self):
-        '''
+        """
         Lets user upload audio files to the soundboard.
-        '''
+        """
         if not session.get('logged_in'):
             return redirect(url_for('login'))
         else:
@@ -246,9 +245,9 @@ class WebApp:
                 return render_template('index.html')
 
     def set_greeting(self):
-        '''
+        """
         Sets an existing sound as a user's greeting sound
-        '''
+        """
         if not session.get('logged_in'):
             return jsonify({'error': 'Not authorized'}), 401
 
@@ -274,9 +273,9 @@ class WebApp:
             return jsonify({'error': f'Failed to set greeting: {str(e)}'}), 500
 
     def upload_greeting(self):
-        '''
+        """
         Lets user upload greeting audio files for specific Discord users.
-        '''
+        """
         if not session.get('logged_in'):
             return redirect(url_for('login'))
         
@@ -319,9 +318,9 @@ class WebApp:
                                     greeting_files=self.filelist(folder=self.greetings_folder))
 
     def play_audio(self):
-        '''
+        """
         Serves the audio file with the given filename.
-        '''
+        """
         if not session.get('logged_in'):
             return redirect(url_for('login'))
         else:
@@ -339,9 +338,9 @@ class WebApp:
                 return 'Invalid request', 400
     
     def delete(self):
-        '''
+        """
         Deletes audio file from server.
-        '''
+        """
         if not session.get('logged_in'):
             return redirect(url_for('login'))
         else:
@@ -367,15 +366,15 @@ class WebApp:
                 return render_template('index.html')
             
     def allowed_file(self, filename):
-        '''
+        """
         Checks if file extension is allowed.
-        '''
+        """
         return '.' in filename and filename.rsplit('.', 1)[1].lower() in self.allowed_extentions
     
     def convert(self, filename, folder=None, loudness=-16):
-        '''
+        """
         Converts audio file to .wav format with volume normalization.
-        '''
+        """
         target_folder = folder if folder else self.app.config['UPLOAD_FOLDER']
         file_path = os.path.join(target_folder, filename)
         
@@ -392,5 +391,6 @@ class WebApp:
         else:
             return False
     
-if __name__ == "__main__":
-    WebApp()
+def start_webserver():
+    webapp = WebApp()
+    webapp.run()

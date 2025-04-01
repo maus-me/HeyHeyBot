@@ -1,24 +1,15 @@
 #!/usr/bin/env python3
-'''
-HeyHeyBot 
 
-Small bot for Discord that will announce when a user joins voice chat to other users in the same channel.
-Greeting message is customizable and depends on user (one user - one audio file).
-Audio files are stored in the ./data/greetings folder.
-Also people can play audio files from the ./data/audio folder by typing !play <filename> in chat.
+# bot.py
 
-All audio played by the bot joining the voice channel.
-We will store user-audio pairs in the JSON. It will be loaded on bot start.
-'''
 # necessary imports
+import discord
+from discord.ext import commands
+import logging
+from logging.handlers import RotatingFileHandler
 import os
-try:
-    import discord
-    from discord.ext import commands
-except ImportError:
-    print("discord.py module not found. Please install it with 'pip install discord.py'")
-    exit(1)
 import asyncio
+from config import get_config
 
 # Audio processing
 import wave
@@ -28,52 +19,14 @@ import contextlib
 from dotenv import load_dotenv
 load_dotenv()
 
-def check_val(value, default=True):
-    if value is not None:
-        if type(value) == bool:
-            return value
-        if value.lower() == 'true':
-            value = True
-        else:
-            value = False
-    else:
-        value = default
-    return value
-
-# bot settings
-token = os.getenv('DISCORD_TOKEN')
-continue_presence = check_val(os.getenv('DISCORD_CONTINUE_PRESENCE'), default=False)
-arrival_announce = check_val(os.getenv('DISCORD_ARRIVAL_ANNOUNCE'))
-muting_announce = check_val(os.getenv('DISCORD_MUTING_ANNOUNCE'))
-leaving_announce = check_val(os.getenv('DISCORD_LEAVING_ANNOUNCE'))
-loglevel = os.getenv('DISCORD_LOGLEVEL')
-if loglevel is not None:
-    loglevel = loglevel.upper()
-    if loglevel not in ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']:
-        loglevel = 'INFO'
-else:
-    loglevel = 'WARNING'
-
-stop_button = '⏹️ Stop '
+config = get_config()
 
 # logging (rotate log every 1 MB, keep 5 old logs)
-import logging
-from logging.handlers import RotatingFileHandler
 logger = logging.getLogger('HeyHeyBot')
-loglevel = getattr(logging, loglevel)
-logger.setLevel(loglevel)
+logger.setLevel(config['loglevel'])
 handler = RotatingFileHandler('logs/heyheybot.log', maxBytes=1000000, backupCount=5, encoding='utf-8')
 handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s'))
 logger.addHandler(handler)
-
-# Start webpage in separate thread
-if os.getenv('WEBPAGE_USERNAME') and os.getenv('WEBPAGE_PASSWORD'):
-    from webserver import WebApp
-    import threading
-    webapp = WebApp()
-    webapp_thread = threading.Thread(target=webapp.run)
-    webapp_thread.start()
-    logger.info(f'Webpage started')
 
 # start bot
 intents = discord.Intents.default()
@@ -90,13 +43,28 @@ client = commands.Bot(
     intents=intents
 )
 
+stop_button = '⏹️ Stop '
+
+# Start webpage in separate thread
+# if os.getenv('WEBPAGE_USERNAME') and os.getenv('WEBPAGE_PASSWORD'):
+#     from webserver import WebApp
+#     import threading
+#     webapp = WebApp()
+#     webapp_thread = threading.Thread(target=webapp.run)
+#     webapp_thread.start()
+#     logger.info(f'Webpage started')
+
+
 @client.event
 async def on_ready():
     logger.info('======')
     logger.info(f'Bot logged in as {client.user.name} (ID: {client.user.id})')
     logger.info(f'Connected to {len(client.guilds)} servers: {", ".join([guild.name for guild in client.guilds])}')
-    logger.info(f'Bot is ready. Rich presence: {continue_presence}, arrival announce: {arrival_announce}, muting announce: {muting_announce}, leaving announce: {leaving_announce}')
+    logger.info(f'Bot is ready. Rich presence: {config["continue_presence"]}, arrival announce: {config["arrival_announce"]}, muting announce: {config["muting_announce"]}, leaving announce: {config["leaving_announce"]}')
     logger.info('======')
+
+def run_bot():
+    client.run(config['token'])
 
 # Play audio file from ./data/audio folder
 sounds = {} # {filename: {'source': <discord.PCMVolumeTransformer>, 'duration': <int>}}
@@ -163,7 +131,7 @@ async def list_audio_files(sort=True):
 @client.command()
 async def vc_disconnect(client, force=False):
     try:
-        if continue_presence and not force:
+        if config["continue_presence"] and not force:
             # check if any user is in a current voice channel
             current_voice_channel = client.voice_clients[0].channel
             if len(current_voice_channel.members) == 1:
@@ -201,7 +169,7 @@ async def on_voice_state_update(member, before, after):
     if member.bot:
         return
     if before.channel is None and after.channel is not None:
-        if arrival_announce:
+        if config["arrival_announce"]:
             # When user joins voice channel (user was not in voice channel before)
             logger.info(f'{member.name} joined {after.channel.name}')
             # Join the same voice channel
@@ -210,14 +178,14 @@ async def on_voice_state_update(member, before, after):
                 await channel.connect()
             except:
                 pass
-            if continue_presence and not await is_same_channel(client, channel):
+            if config["continue_presence"] and not await is_same_channel(client, channel):
                 return
             # Play audio file
             await play(client, f'./data/greetings/{member.name}.wav', default='./data/greetings/hello.wav')
             # Disconnect from the voice channel
             await vc_disconnect(client)
     elif before.channel is not None and after.channel is None:
-        if leaving_announce:
+        if config["leaving_announce"]:
             # When user leaves voice channel (user was in voice channel before)
             logger.info(f'{member.name} left {before.channel.name}')
             # Leave the voice channel announce
@@ -226,14 +194,14 @@ async def on_voice_state_update(member, before, after):
                 await channel.connect()
             except:
                 pass
-            if continue_presence and not await is_same_channel(client, channel):
+            if config["continue_presence"] and not await is_same_channel(client, channel):
                 return
             # Play audio file
             await play(client, f'./data/leavings/{member.name}.wav', audiolen=1, default='./data/leavings/bye.wav')
             # Disconnect from the voice channel
             await vc_disconnect(client) 
     elif before.channel != after.channel:
-        if arrival_announce:
+        if config["arrival_announce"]:
             # When user moves from one voice channel to another
             logger.info(f'{member.name} moved from {before.channel.name} to {after.channel.name}')
             # Disconnect from the previous voice channel
@@ -243,14 +211,14 @@ async def on_voice_state_update(member, before, after):
                 await after.channel.connect()
             except Exception as e:
                 logger.error(f'Error joining {after.channel.name}: {e}')
-            if continue_presence and not await is_same_channel(client, after.channel):
+            if config["continue_presence"] and not await is_same_channel(client, after.channel):
                 return
             # Play audio file
             await play(client, f'./data/greetings/{member.name}.wav', default='./data/greetings/hello.wav')
             # Disconnect from the voice channel
             await vc_disconnect(client)
     else:
-        if muting_announce:
+        if config["muting_announce"]:
             # When user mutes/unmutes
             logger.info(f'{member.name} muted/unmuted')
             # Join the voice channel
@@ -259,7 +227,7 @@ async def on_voice_state_update(member, before, after):
                 await channel.connect()
             except:
                 pass
-            if continue_presence and not await is_same_channel(client, channel):
+            if config["continue_presence"] and not await is_same_channel(client, channel):
                 return
             # Play audio file
             await play(client, f'./data/mutings/{member.name}.wav', default='./data/mutings/muted.wav')
@@ -318,5 +286,5 @@ async def on_message(message):
             await message.channel.send('', view=view)
     await client.process_commands(message)
 
-# Run bot
-client.run(token)
+# # Run bot
+# client.run(token)

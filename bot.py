@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+
 # bot.py
 
 # necessary imports
@@ -10,6 +11,8 @@ from discord.ext import commands
 import logging
 import wave
 import contextlib
+from logging.handlers import RotatingFileHandler
+from config import get_config
 
 config = get_config()
 

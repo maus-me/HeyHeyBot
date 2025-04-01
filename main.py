@@ -11,15 +11,14 @@ All audio played by the bot joining the voice channel.
 We will store user-audio pairs in the JSON. It will be loaded on bot start.
 """
 
-import asyncio
+import threading
 from bot import run_bot
 from webserver import start_webserver
 
-async def main():
-    await asyncio.gather(
-        start_webserver(),
-        run_bot()
-    )
+def start_webserver_thread():
+    start_webserver()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    webserver_thread = threading.Thread(target=start_webserver_thread)
+    webserver_thread.start()
+    run_bot()

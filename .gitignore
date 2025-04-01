@@ -38,3 +38,8 @@ build/
 *.crt
 *.key
 certs/
+
+data/audio/*
+data/greetings/*
+data/leavings/*
+data/mutings/*

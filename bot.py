@@ -285,6 +285,3 @@ async def on_message(message):
             # Send message
             await message.channel.send('', view=view)
     await client.process_commands(message)
-
-# # Run bot
-# client.run(token)

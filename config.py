@@ -33,7 +33,4 @@ def get_config():
         'loglevel': check_loglevel(os.getenv('DISCORD_LOGLEVEL', 'WARNING'))
     }
 
-    if config['loglevel'] not in ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']:
-        config['loglevel'] = 'INFO'
-
     return config

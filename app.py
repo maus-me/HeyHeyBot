@@ -43,7 +43,7 @@ def check_val(value, default=True):
 # bot settings
 token = os.getenv('DISCORD_TOKEN')
 continue_presence = check_val(os.getenv('DISCORD_CONTINUE_PRESENCE'), default=False)
-arrivial_announce = check_val(os.getenv('DISCORD_ARRIVAL_ANNOUNCE'))
+arrival_announce = check_val(os.getenv('DISCORD_ARRIVAL_ANNOUNCE'))
 muting_announce = check_val(os.getenv('DISCORD_MUTING_ANNOUNCE'))
 leaving_announce = check_val(os.getenv('DISCORD_LEAVING_ANNOUNCE'))
 loglevel = os.getenv('DISCORD_LOGLEVEL')
@@ -95,7 +95,7 @@ async def on_ready():
     logger.info('======')
     logger.info(f'Bot logged in as {client.user.name} (ID: {client.user.id})')
     logger.info(f'Connected to {len(client.guilds)} servers: {", ".join([guild.name for guild in client.guilds])}')
-    logger.info(f'Bot is ready. Rich presence: {continue_presence}, arrival announce: {arrivial_announce}, muting announce: {muting_announce}, leaving announce: {leaving_announce}')
+    logger.info(f'Bot is ready. Rich presence: {continue_presence}, arrival announce: {arrival_announce}, muting announce: {muting_announce}, leaving announce: {leaving_announce}')
     logger.info('======')
 
 # Play audio file from ./data/audio folder
@@ -201,7 +201,7 @@ async def on_voice_state_update(member, before, after):
     if member.bot:
         return
     if before.channel is None and after.channel is not None:
-        if arrivial_announce:
+        if arrival_announce:
             # When user joins voice channel (user was not in voice channel before)
             logger.info(f'{member.name} joined {after.channel.name}')
             # Join the same voice channel
@@ -233,7 +233,7 @@ async def on_voice_state_update(member, before, after):
             # Disconnect from the voice channel
             await vc_disconnect(client) 
     elif before.channel != after.channel:
-        if arrivial_announce:
+        if arrival_announce:
             # When user moves from one voice channel to another
             logger.info(f'{member.name} moved from {before.channel.name} to {after.channel.name}')
             # Disconnect from the previous voice channel

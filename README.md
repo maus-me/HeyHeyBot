@@ -26,7 +26,7 @@ services:
   heyheybot:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: todo
     container_name: HeyHeyBot
     environment:
       - DISCORD_TOKEN=PLACE_YOUR_DISCORD_TOKEN_HERE

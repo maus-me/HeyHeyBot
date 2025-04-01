@@ -12,9 +12,6 @@ import secrets
 import glob
 import shutil
 
-# bot settings stored in .env
-from dotenv import load_dotenv
-load_dotenv()
 
 class WebApp:
     def __init__(self):
@@ -22,13 +19,13 @@ class WebApp:
             'username': os.getenv('WEBPAGE_USERNAME'),
             'password': os.getenv('WEBPAGE_PASSWORD')
         }
-        self.allowed_extentions = {'mp3', 'wav'}
+        self.allowed_extensions = {'mp3', 'wav'}
         self.upload_folder = os.getenv('UPLOAD_FOLDER') if os.getenv('UPLOAD_FOLDER') else './data/audio'
         self.greetings_folder = './data/greetings'
         self.host = os.getenv('WEBPAGE_HOST') if os.getenv('WEBPAGE_HOST') else 'localhost'
         self.port = int(os.getenv('WEBPAGE_PORT')) if os.getenv('WEBPAGE_PORT') else 5100
         self.ssl_context = None
-        
+
         # Setup SSL if certificates are provided
         cert_path = os.getenv('SSL_CERT')
         key_path = os.getenv('SSL_KEY')
@@ -37,13 +34,14 @@ class WebApp:
 
         self.app = Flask(__name__)
         self.app.config['UPLOAD_FOLDER'] = self.upload_folder
-        self.app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 # 16 MB
+        self.app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB
 
         self.app.add_url_rule('/', 'index', self.index, methods=['GET', 'POST'])
         self.app.add_url_rule('/upload', 'upload', self.upload, methods=['GET', 'POST'])
         self.app.add_url_rule('/upload_greeting', 'upload_greeting', self.upload_greeting, methods=['POST'])
         self.app.add_url_rule('/set_greeting', 'set_greeting', self.set_greeting, methods=['POST'])
-        self.app.add_url_rule('/set_version_as_current', 'set_version_as_current', self.set_version_as_current, methods=['POST'])
+        self.app.add_url_rule('/set_version_as_current', 'set_version_as_current', self.set_version_as_current,
+                              methods=['POST'])
         self.app.add_url_rule('/delete', 'delete', self.delete, methods=['GET', 'POST'])
         self.app.add_url_rule('/login', 'login', self.login, methods=['GET', 'POST'])
         self.app.add_url_rule('/logout', 'logout', self.logout, methods=['GET', 'POST'])
@@ -65,9 +63,9 @@ class WebApp:
         Starts the webserver with optional SSL support.
         """
         self.app.run(
-            host=self.host, 
-            port=self.port, 
-            debug=False, 
+            host=self.host,
+            port=self.port,
+            debug=False,
             threaded=True,
             ssl_context=self.ssl_context
         )
@@ -184,30 +182,31 @@ class WebApp:
         else:
             soundboard_files = self.filelist()
             greeting_files = self.filelist(folder=self.greetings_folder)
-            return render_template('index.html', 
-                                uploaded_files=soundboard_files,
-                                greeting_files=greeting_files)
-        
+            return render_template('index.html',
+                                   uploaded_files=soundboard_files,
+                                   greeting_files=greeting_files)
+
     def login(self):
         """
         Displays login page when user is not logged in.
         """
         if request.method == 'POST':
-            if request.form['username'] == self.credentials['username'] and request.form['password'] == self.credentials['password']:
+            if request.form['username'] == self.credentials['username'] and request.form['password'] == \
+                    self.credentials['password']:
                 session['logged_in'] = True
                 return redirect(url_for('index'))
             else:
                 return render_template('login.html', error='Invalid credentials.')
         else:
             return render_template('login.html')
-        
+
     def logout(self):
         """
         Logs user out.
         """
         session['logged_in'] = False
         return redirect(url_for('index'))
-    
+
     def upload(self):
         """
         Lets user upload audio files to the soundboard.
@@ -226,21 +225,21 @@ class WebApp:
                     file.save(os.path.join(self.app.config['UPLOAD_FOLDER'], filename))
                     success = self.convert(filename)
                     if success:
-                        return render_template('index.html', 
-                                            success='File uploaded.',
-                                            uploaded_files=self.filelist(),
-                                            greeting_files=self.filelist(folder=self.greetings_folder))
+                        return render_template('index.html',
+                                               success='File uploaded.',
+                                               uploaded_files=self.filelist(),
+                                               greeting_files=self.filelist(folder=self.greetings_folder))
                     else:
                         os.remove(os.path.join(self.app.config['UPLOAD_FOLDER'], filename))
-                        return render_template('index.html', 
-                                            error='Something went wrong while converting the file.',
-                                            uploaded_files=self.filelist(),
-                                            greeting_files=self.filelist(folder=self.greetings_folder))
+                        return render_template('index.html',
+                                               error='Something went wrong while converting the file.',
+                                               uploaded_files=self.filelist(),
+                                               greeting_files=self.filelist(folder=self.greetings_folder))
                 else:
-                    return render_template('index.html', 
-                                        error='Invalid file extension.',
-                                        uploaded_files=self.filelist(),
-                                        greeting_files=self.filelist(folder=self.greetings_folder))
+                    return render_template('index.html',
+                                           error='Invalid file extension.',
+                                           uploaded_files=self.filelist(),
+                                           greeting_files=self.filelist(folder=self.greetings_folder))
             else:
                 return render_template('index.html')
 
@@ -257,7 +256,7 @@ class WebApp:
 
         username = secure_filename(data['username'])
         source_file = os.path.join(self.upload_folder, data['filename'])
-        
+
         if not os.path.exists(source_file):
             return jsonify({'error': 'Source file not found'}), 404
 
@@ -278,17 +277,17 @@ class WebApp:
         """
         if not session.get('logged_in'):
             return redirect(url_for('login'))
-        
+
         if request.method == 'POST':
             if 'file' not in request.files:
                 return render_template('index.html', error='No file selected.')
-            
+
             file = request.files['file']
             discord_username = request.form.get('discord_username', '').strip()
-            
+
             if file.filename == '' or not discord_username:
                 return render_template('index.html', error='Both file and Discord username are required.')
-            
+
             if file and self.allowed_file(file.filename):
                 # Backup existing greeting if it exists
                 self.backup_existing_greeting(discord_username)
@@ -298,24 +297,24 @@ class WebApp:
                 file_path = os.path.join(self.greetings_folder, filename)
                 file.save(file_path)
                 success = self.convert(filename, folder=self.greetings_folder)
-                
+
                 if success:
                     return render_template('index.html',
-                                        success=f'Greeting sound for {discord_username} uploaded successfully.',
-                                        uploaded_files=self.filelist(),
-                                        greeting_files=self.filelist(folder=self.greetings_folder))
+                                           success=f'Greeting sound for {discord_username} uploaded successfully.',
+                                           uploaded_files=self.filelist(),
+                                           greeting_files=self.filelist(folder=self.greetings_folder))
                 else:
                     if os.path.exists(file_path):
                         os.remove(file_path)
                     return render_template('index.html',
-                                        error='Something went wrong while converting the file.',
-                                        uploaded_files=self.filelist(),
-                                        greeting_files=self.filelist(folder=self.greetings_folder))
+                                           error='Something went wrong while converting the file.',
+                                           uploaded_files=self.filelist(),
+                                           greeting_files=self.filelist(folder=self.greetings_folder))
             else:
                 return render_template('index.html',
-                                    error='Invalid file extension.',
-                                    uploaded_files=self.filelist(),
-                                    greeting_files=self.filelist(folder=self.greetings_folder))
+                                       error='Invalid file extension.',
+                                       uploaded_files=self.filelist(),
+                                       greeting_files=self.filelist(folder=self.greetings_folder))
 
     def play_audio(self):
         """
@@ -327,16 +326,16 @@ class WebApp:
             if request.method == 'GET':
                 filename = request.args.get('filename')
                 folder = request.args.get('folder', 'soundboard')
-                
+
                 target_folder = self.greetings_folder if folder == 'greetings' else self.app.config['UPLOAD_FOLDER']
-                
+
                 if filename in self.filelist(folder=target_folder):
                     return send_from_directory(target_folder, filename)
                 else:
                     return 'File not found', 404
             else:
                 return 'Invalid request', 400
-    
+
     def delete(self):
         """
         Deletes audio file from server.
@@ -347,50 +346,52 @@ class WebApp:
             if request.method == 'GET':
                 filename = request.args.get('filename')
                 folder = request.args.get('folder', 'soundboard')
-                
+
                 target_folder = self.greetings_folder if folder == 'greetings' else self.app.config['UPLOAD_FOLDER']
                 file_path = os.path.join(target_folder, filename)
-                
+
                 if os.path.exists(file_path):
                     os.remove(file_path)
                     return render_template('index.html',
-                                        success='File deleted.',
-                                        uploaded_files=self.filelist(),
-                                        greeting_files=self.filelist(folder=self.greetings_folder))
+                                           success='File deleted.',
+                                           uploaded_files=self.filelist(),
+                                           greeting_files=self.filelist(folder=self.greetings_folder))
                 else:
                     return render_template('index.html',
-                                        error='File not found.',
-                                        uploaded_files=self.filelist(),
-                                        greeting_files=self.filelist(folder=self.greetings_folder))
+                                           error='File not found.',
+                                           uploaded_files=self.filelist(),
+                                           greeting_files=self.filelist(folder=self.greetings_folder))
             else:
                 return render_template('index.html')
-            
+
     def allowed_file(self, filename):
         """
         Checks if file extension is allowed.
         """
-        return '.' in filename and filename.rsplit('.', 1)[1].lower() in self.allowed_extentions
-    
+        return '.' in filename and filename.rsplit('.', 1)[1].lower() in self.allowed_extensions
+
     def convert(self, filename, folder=None, loudness=-16):
         """
         Converts audio file to .wav format with volume normalization.
         """
         target_folder = folder if folder else self.app.config['UPLOAD_FOLDER']
         file_path = os.path.join(target_folder, filename)
-        
+
         if os.path.exists(file_path):
             output_path = os.path.join(target_folder, filename.replace('.mp3', '.wav'))
             subprocess.call(
-                ['ffmpeg', '-i', file_path, '-af', f'loudnorm=I={loudness}', '-ar', '48000', '-ac', '2', '-y', output_path]
+                ['ffmpeg', '-i', file_path, '-af', f'loudnorm=I={loudness}', '-ar', '48000', '-ac', '2', '-y',
+                 output_path]
             )
-            
+
             # Remove original file if it's different from the output
             if file_path != output_path:
                 os.remove(file_path)
             return True
         else:
             return False
-    
+
+
 def start_webserver():
     webapp = WebApp()
     webapp.run()

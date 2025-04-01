@@ -4,20 +4,12 @@
 
 # necessary imports
 import discord
-from discord.ext import commands
-import logging
-from logging.handlers import RotatingFileHandler
 import os
 import asyncio
-from config import get_config
-
-# Audio processing
+from discord.ext import commands
+import logging
 import wave
 import contextlib
-
-# bot settings stored in .env
-from dotenv import load_dotenv
-load_dotenv()
 
 config = get_config()
 
@@ -43,16 +35,15 @@ client = commands.Bot(
     intents=intents
 )
 
+'''
+TODO: Move these to something not global
+'''
 stop_button = '⏹️ Stop '
+sounds = {}  # {filename: {'source': <discord.PCMVolumeTransformer>, 'duration': <int>}}
 
-# Start webpage in separate thread
-# if os.getenv('WEBPAGE_USERNAME') and os.getenv('WEBPAGE_PASSWORD'):
-#     from webserver import WebApp
-#     import threading
-#     webapp = WebApp()
-#     webapp_thread = threading.Thread(target=webapp.run)
-#     webapp_thread.start()
-#     logger.info(f'Webpage started')
+
+def run_bot():
+    client.run(config['token'])
 
 
 @client.event
@@ -60,24 +51,24 @@ async def on_ready():
     logger.info('======')
     logger.info(f'Bot logged in as {client.user.name} (ID: {client.user.id})')
     logger.info(f'Connected to {len(client.guilds)} servers: {", ".join([guild.name for guild in client.guilds])}')
-    logger.info(f'Bot is ready. Rich presence: {config["continue_presence"]}, arrival announce: {config["arrival_announce"]}, muting announce: {config["muting_announce"]}, leaving announce: {config["leaving_announce"]}')
+    logger.info(
+        f'Bot is ready. Rich presence: {config["continue_presence"]}, arrival announce: {config["arrival_announce"]}, muting announce: {config["muting_announce"]}, leaving announce: {config["leaving_announce"]}')
     logger.info('======')
 
-def run_bot():
-    client.run(config['token'])
 
 # Play audio file from ./data/audio folder
-sounds = {} # {filename: {'source': <discord.PCMVolumeTransformer>, 'duration': <int>}}
 async def wav_length(audio_file):
-    with contextlib.closing(wave.open(audio_file,'r')) as f:
+    with contextlib.closing(wave.open(audio_file, 'r')) as f:
         frames = f.getnframes()
         rate = f.getframerate()
-        audiolen = frames / float(rate)
-    return audiolen
+        audio_len = frames / float(rate)
+    return audio_len
+
 
 # returns BufferedIOBase from given sound path
 async def get_buffered_io(file):
     return open(file, 'rb')
+
 
 # We are storing audio files in the dictionary to avoid opening the same file multiple times
 async def cached_sounds(audio_file):
@@ -91,30 +82,32 @@ async def cached_sounds(audio_file):
         logger.debug(f'Playing {audio_file} from cache')
     return sounds[audio_file]['source'], sounds[audio_file]['duration']
 
+
 @client.command()
-async def play(client, audio_file, audiolen=5, default='./data/greetings/hello.wav'):
+async def play(client, audio_file, audio_len=5, default='./data/greetings/hello.wav'):
     try:
         # Play audio file
         if not os.path.isfile(audio_file):
             audio_file = default
-        sound, audiolen = await cached_sounds(audio_file)
+        sound, audio_len = await cached_sounds(audio_file)
         sound = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(sound), volume=1)
         client.voice_clients[0].play(sound, after=lambda e: logger.exception(f'Player error') if e else None)
         # wait until audio is played
-        await asyncio.sleep(audiolen + 1)
+        await asyncio.sleep(audio_len + 1)
     except discord.errors.ClientException as e:
         # if bot is already playing audio file
         if 'Already playing audio' in str(e):
             # stop playing
             client.voice_clients[0].stop()
             # play audio file
-            await play(client, audio_file, audiolen, default)
+            await play(client, audio_file, audio_len, default)
         else:
             logger.error(f'Error playing audio file (ClientException): {e}')
             return
     except Exception as e:
         logger.error(f'Error playing audio file: {e}')
         return
+
 
 # List all audio files in ./data/audio folder
 async def list_audio_files(sort=True):
@@ -126,6 +119,7 @@ async def list_audio_files(sort=True):
     if sort:
         audio_files.sort()
     return audio_files
+
 
 # Disconnect from voice channel
 @client.command()
@@ -145,6 +139,7 @@ async def vc_disconnect(client, force=False):
     except Exception as e:
         logger.warning(f'Error disconnecting from voice channel: {e}')
 
+
 async def is_same_channel(client, channel):
     # Check if user joins same voice channel as bot currently in
     # We don't want to play audio if person joins another voice channel
@@ -158,6 +153,7 @@ async def is_same_channel(client, channel):
         return False
     print('same channel')
     return True
+
 
 # logger.info username and channel name when user joins voice channel
 @client.event
@@ -199,7 +195,7 @@ async def on_voice_state_update(member, before, after):
             # Play audio file
             await play(client, f'./data/leavings/{member.name}.wav', audiolen=1, default='./data/leavings/bye.wav')
             # Disconnect from the voice channel
-            await vc_disconnect(client) 
+            await vc_disconnect(client)
     elif before.channel != after.channel:
         if config["arrival_announce"]:
             # When user moves from one voice channel to another
@@ -234,6 +230,7 @@ async def on_voice_state_update(member, before, after):
             # Disconnect from the voice channel
             await vc_disconnect(client)
 
+
 # Process button press
 @client.event
 async def on_interaction(interaction):
@@ -243,10 +240,11 @@ async def on_interaction(interaction):
         client.voice_clients[0].stop()
         await interaction.response.send_message(f'⏹️ Stopped', ephemeral=True, silent=True, delete_after=1)
     try:
-        audiolen = sounds[f'./data/audio/{audio_file}.wav']['duration'] # audio length from cache
+        audio_len = sounds[f'./data/audio/{audio_file}.wav']['duration']  # audio length from cache
     except:
-        audiolen = 1 # default audio length
-    await interaction.response.send_message(f'▶️ Playing: {audio_file}', ephemeral=True, silent=True, delete_after=audiolen)
+        audio_len = 1  # default audio length
+    await interaction.response.send_message(f'▶️ Playing: {audio_file}', ephemeral=True, silent=True,
+                                            delete_after=audio_len)
     # Join the voice channel
     if interaction.user.voice is None:
         await interaction.response.send_message(f'⭕ You are not in voice channel', ephemeral=True, delete_after=3)
@@ -262,6 +260,7 @@ async def on_interaction(interaction):
     # await interaction.message.delete()
     # Disconnect from the voice channel
     await vc_disconnect(client)
+
 
 # Display buttons with audio files when user types !playsound
 @client.event

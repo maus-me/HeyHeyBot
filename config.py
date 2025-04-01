@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 def get_config():
     def check_val(value, default=True):
         if value is not None:

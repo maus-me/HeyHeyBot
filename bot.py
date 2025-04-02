@@ -7,6 +7,8 @@
 import discord
 import os
 import asyncio
+
+from discord import app_commands
 from discord.ext import commands
 import logging
 import wave
@@ -32,17 +34,35 @@ intents.voice_states = True
 intents.presences = True
 intents.guilds = True
 
-client = commands.Bot(
-    command_prefix=commands.when_mentioned_or('!'),
-    description='HeyHeyBot',
-    intents=intents
-)
+
+class MyClient(discord.Client):
+    def __init__(self, *, intents: discord.Intents):
+        super().__init__(intents=intents)
+        # A CommandTree is a special type that holds all the application command
+        # state required to make it work. This is a separate class because it
+        # allows all the extra state to be opt-in.
+        # Whenever you want to work with application commands, your tree is used
+        # to store and work with them.
+        # Note: When using commands.Bot instead of discord.Client, the bot will
+        # maintain its own tree instead.
+        self.tree = app_commands.CommandTree(self)
+
+    # In this basic example, we just synchronize the app commands to one guild.
+    # Instead of specifying a guild to every command, we copy over our global commands instead.
+    # By doing so, we don't have to wait up to an hour until they are shown to the end-user.
+    async def setup_hook(self):
+        MY_GUILD = discord.Object(id=config['guild_id'])
+        # This copies the global commands over to your guild.
+        self.tree.copy_global_to(guild=MY_GUILD)
+        await self.tree.sync(guild=MY_GUILD)
+
+
+client = MyClient(intents=intents)
 
 '''
-TODO: Move these to something not global
+{filename: {'source': <discord.PCMVolumeTransformer>, 'duration': <int>}}
 '''
-stop_button = '⏹️ Stop '
-sounds = {}  # {filename: {'source': <discord.PCMVolumeTransformer>, 'duration': <int>}}
+sounds = {}
 
 
 def run_bot():
@@ -55,7 +75,11 @@ async def on_ready():
     logger.info(f'Bot logged in as {client.user.name} (ID: {client.user.id})')
     logger.info(f'Connected to {len(client.guilds)} servers: {", ".join([guild.name for guild in client.guilds])}')
     logger.info(
-        f'Bot is ready. Rich presence: {config["continue_presence"]}, arrival announce: {config["arrival_announce"]}, muting announce: {config["muting_announce"]}, leaving announce: {config["leaving_announce"]}')
+        f'Bot is ready. Rich presence: {config["continue_presence"]}, '
+        f'arrival announce: {config["arrival_announce"]}, '
+        f'muting announce: {config["muting_announce"]}, '
+        f'leaving announce: {config["leaving_announce"]}'
+    )
     logger.info('======')
 
 
@@ -67,12 +91,6 @@ async def wav_length(audio_file):
         audio_len = frames / float(rate)
     return audio_len
 
-
-# returns BufferedIOBase from given sound path
-async def get_buffered_io(file):
-    return open(file, 'rb')
-
-
 # We are storing audio files in the dictionary to avoid opening the same file multiple times
 async def cached_sounds(audio_file):
     if audio_file not in sounds:
@@ -80,52 +98,63 @@ async def cached_sounds(audio_file):
             'source': audio_file,
             'duration': await wav_length(audio_file)
         }
-        logger.debug(f'Playing {audio_file}')
+        logger.info(f'Playing {audio_file}')
     else:
-        logger.debug(f'Playing {audio_file} from cache')
+        logger.info(f'Playing {audio_file} from cache')
     return sounds[audio_file]['source'], sounds[audio_file]['duration']
 
 
-@client.command()
 async def play(client, audio_file, audio_len=5, default='./data/greetings/hello.wav'):
     try:
-        # Play audio file
+        # Check to see if the audio_file exists
         if not os.path.isfile(audio_file):
-            audio_file = default
+            # If the audio file does not exist, check to see if the default file exists
+            if os.path.exists(default):
+                # Attribute the default file to the audio_file
+                audio_file = default
+            else:
+                logger.warning(f'Audio file {audio_file} does not exist')
+                return
+
         sound, audio_len = await cached_sounds(audio_file)
         sound = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(sound), volume=1)
-        client.voice_clients[0].play(sound, after=lambda e: logger.exception(f'Player error') if e else None)
-        # wait until audio is played
+
+        # Check if the bot is already playing audio
+        if client.voice_clients and client.voice_clients[0].is_playing():
+            client.voice_clients[0].stop()
+
+        # Play the audio file
+        client.voice_clients[0].play(sound, after=lambda e: logger.exception('Player error') if e else None)
         await asyncio.sleep(audio_len + 1)
     except discord.errors.ClientException as e:
-        # if bot is already playing audio file
-        if 'Already playing audio' in str(e):
-            # stop playing
-            client.voice_clients[0].stop()
-            # play audio file
-            await play(client, audio_file, audio_len, default)
-        else:
-            logger.error(f'Error playing audio file (ClientException): {e}')
-            return
+        logger.error(f'Error playing audio file (ClientException): {e}')
+        return
     except Exception as e:
         logger.error(f'Error playing audio file: {e}')
         return
 
 
 # List all audio files in ./data/audio folder
-async def list_audio_files(sort=True):
-    audio_files = []
+async def list_audio_files(sort=True, extensions=None):
+    if extensions is None:
+        extensions = ['.wav', '.mp3']
+    # List all audio files in the ./data/audio folder and return the file names
+    audio_files = {}
+
     for file in os.listdir('./data/audio'):
-        if file.endswith('.wav'):
-            file = file[:-4]
-            audio_files.append(file)
+        # if extension match
+        if any(file.endswith(ext) for ext in extensions):
+            # add file to dictionary with filename as key and extension as value
+            filename, ext = os.path.splitext(file)
+            audio_files[filename] = ext
+
     if sort:
-        audio_files.sort()
+        audio_files = dict(sorted(audio_files.items()))
+
+    logger.debug(f'{audio_files}')
     return audio_files
 
-
 # Disconnect from voice channel
-@client.command()
 async def vc_disconnect(client, force=False):
     try:
         if config["continue_presence"] and not force:
@@ -162,11 +191,9 @@ async def is_same_channel(client, channel):
 @client.event
 async def on_voice_state_update(member, before, after):
     # If bot ignore
-    if member.id == client.user.id:
+    if member.id == client.user.id or member.bot:
         return
-    # If other bot ignore
-    if member.bot:
-        return
+
     if before.channel is None and after.channel is not None:
         if config["arrival_announce"]:
             # When user joins voice channel (user was not in voice channel before)
@@ -180,7 +207,7 @@ async def on_voice_state_update(member, before, after):
             if config["continue_presence"] and not await is_same_channel(client, channel):
                 return
             # Play audio file
-            await play(client, f'./data/greetings/{member.name}.wav', default='./data/greetings/hello.wav')
+            await play(client, f'./data/greetings/{member.name}', default='./data/greetings/hello.wav')
             # Disconnect from the voice channel
             await vc_disconnect(client)
     elif before.channel is not None and after.channel is None:
@@ -196,7 +223,7 @@ async def on_voice_state_update(member, before, after):
             if config["continue_presence"] and not await is_same_channel(client, channel):
                 return
             # Play audio file
-            await play(client, f'./data/leavings/{member.name}.wav', audiolen=1, default='./data/leavings/bye.wav')
+            await play(client, f'./data/leavings/{member.name}', audio_len=1, default='./data/leavings/bye.wav')
             # Disconnect from the voice channel
             await vc_disconnect(client)
     elif before.channel != after.channel:
@@ -213,7 +240,7 @@ async def on_voice_state_update(member, before, after):
             if config["continue_presence"] and not await is_same_channel(client, after.channel):
                 return
             # Play audio file
-            await play(client, f'./data/greetings/{member.name}.wav', default='./data/greetings/hello.wav')
+            await play(client, f'./data/greetings/{member.name}', default='./data/greetings/hello.wav')
             # Disconnect from the voice channel
             await vc_disconnect(client)
     else:
@@ -229,7 +256,7 @@ async def on_voice_state_update(member, before, after):
             if config["continue_presence"] and not await is_same_channel(client, channel):
                 return
             # Play audio file
-            await play(client, f'./data/mutings/{member.name}.wav', default='./data/mutings/muted.wav')
+            await play(client, f'./data/mutings/{member.name}', default='./data/mutings/muted.wav')
             # Disconnect from the voice channel
             await vc_disconnect(client)
 
@@ -239,51 +266,67 @@ async def on_voice_state_update(member, before, after):
 async def on_interaction(interaction):
     # Get audio file name
     audio_file = interaction.data['custom_id']
-    if audio_file == stop_button:
-        client.voice_clients[0].stop()
-        await interaction.response.send_message(f'⏹️ Stopped', ephemeral=True, silent=True, delete_after=1)
-    try:
-        audio_len = sounds[f'./data/audio/{audio_file}.wav']['duration']  # audio length from cache
-    except:
-        audio_len = 1  # default audio length
-    await interaction.response.send_message(f'▶️ Playing: {audio_file}', ephemeral=True, silent=True,
-                                            delete_after=audio_len)
-    # Join the voice channel
+
+    # if interaction.data['label'] == stop_button:
+    #     # If audio is playing
+    #     if client.voice_clients and client.voice_clients[0].is_playing():
+    #         client.voice_clients[0].stop()
+    #         await interaction.response.send_message(f'⏹️ Stopped', ephemeral=True, delete_after=2)
+    #     else:
+    #         await interaction.response.send_message(f'⭕ Nothing to stop', ephemeral=True, delete_after=2)
+    # else:
+    audio_len = sounds.get(f'./data/audio/{audio_file}', {}).get('duration', 1)  # audio length from cache
     if interaction.user.voice is None:
-        await interaction.response.send_message(f'⭕ You are not in voice channel', ephemeral=True, delete_after=3)
+        await interaction.response.send_message(f'⭕ You are not in voice channel', ephemeral=True, delete_after=2)
         return
+    await interaction.response.send_message(f'▶️ Playing: {audio_file}', ephemeral=True, delete_after=audio_len)
+
+    # Join the voice channel
     channel = interaction.user.voice.channel
+
+    # Check if bot is already in the channel
+    if not client.voice_clients:
+        # If bot is already in the channel, do nothing
+        logger.info(f'Bot not in channel, {channel.name}')
     try:
         await channel.connect()
-    except:
+    except discord.errors.ClientException:
         pass
     # Play audio file
-    await play(client, f'./data/audio/{audio_file}.wav')
+    await play(client, f'./data/audio/{audio_file}')
     # # Delete message
     # await interaction.message.delete()
     # Disconnect from the voice channel
     await vc_disconnect(client)
 
 
-# Display buttons with audio files when user types !playsound
-@client.event
-async def on_message(message):
-    if message.content.startswith('!playsound'):
-        # Get list of audio files
-        audio_files = await list_audio_files()
-        # Append stop button
-        audio_files.append(stop_button)
-        # Split to 25 files per button
-        buttons_groups = [audio_files[i:i + 25] for i in range(0, len(audio_files), 25)]
-        for group in buttons_groups:
-            # Create buttons
-            buttons = []
-            for file in group:
-                buttons.append(discord.ui.Button(label=file, custom_id=file))
-            # Create view
-            view = discord.ui.View()
-            for button in buttons:
-                view.add_item(button)
-            # Send message
-            await message.channel.send('', view=view)
-    await client.process_commands(message)
+@client.tree.command()
+async def playsound(interaction: discord.Interaction):
+    """Plays a sound."""
+    # Get list of audio files
+    audio_files = await list_audio_files()
+
+    # Split to 25 files per button
+    buttons_groups = [list(audio_files.items())[i:i + 25] for i in range(0, len(audio_files), 25)]
+    for group in buttons_groups:
+        # Create buttons
+        buttons = []
+        for filename, ext in group:
+            filename_with_ext = f'{filename}{ext}'
+            buttons.append(discord.ui.Button(label=filename, custom_id=filename_with_ext))
+        # Create view
+        view = discord.ui.View()
+        for button in buttons:
+            view.add_item(button)
+        # Send message
+        await interaction.response.send_message('', view=view)
+
+
+@client.tree.command()
+@app_commands.describe(
+    first_value='The first value you want to add something to',
+    second_value='The value you want to add to the first value',
+)
+async def add(interaction: discord.Interaction, first_value: int, second_value: int):
+    """Adds two numbers together."""
+    await interaction.response.send_message(f'{first_value} + {second_value} = {first_value + second_value}')

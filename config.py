@@ -27,6 +27,7 @@ def get_config():
 
     config = {
         'token': os.getenv('DISCORD_TOKEN'),
+        'guild_id': os.getenv('DISCORD_GUILD_ID'),
         'continue_presence': check_val(os.getenv('DISCORD_CONTINUE_PRESENCE'), default=False),
         'arrival_announce': check_val(os.getenv('DISCORD_ARRIVAL_ANNOUNCE')),
         'muting_announce': check_val(os.getenv('DISCORD_MUTING_ANNOUNCE')),

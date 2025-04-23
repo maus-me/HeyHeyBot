@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-
-
 # bot.py
 
 # necessary imports
@@ -104,17 +102,29 @@ async def cached_sounds(audio_file):
     return sounds[audio_file]['source'], sounds[audio_file]['duration']
 
 
-async def play(client, audio_file, audio_len=5, default='./data/greetings/hello.wav'):
+async def play(client, audio_path):
     try:
-        # Check to see if the audio_file exists
-        if not os.path.isfile(audio_file):
-            # If the audio file does not exist, check to see if the default file exists
-            if os.path.exists(default):
-                # Attribute the default file to the audio_file
-                audio_file = default
-            else:
-                logger.warning(f'Audio file {audio_file} does not exist')
-                return
+        # Check if the path exists
+        if not os.path.exists(audio_path):
+            logger.warning(f'Audio path {audio_path} does not exist')
+            return
+        elif os.path.isfile(audio_path):
+            audio_file = audio_path
+        else:
+            # If the path exists, loop through all the files in the directory that have the file extension mp3 or wav
+            supported_extensions = ['.wav', '.mp3']
+            audio_file = None
+
+            # List all files in the audio_path directory
+            for file in os.listdir(audio_path):
+                # Check if the file has a supported extension and add to a list
+                if any(file.endswith(ext) for ext in supported_extensions):
+                    audio_file = os.path.join(audio_path, file)
+
+        # If no file found, return
+        if audio_file is None:
+            logger.warning(f'No audio files found in {audio_path} directory.')
+            return
 
         sound, audio_len = await cached_sounds(audio_file)
         sound = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(sound), volume=1)
@@ -207,7 +217,7 @@ async def on_voice_state_update(member, before, after):
             if config["continue_presence"] and not await is_same_channel(client, channel):
                 return
             # Play audio file
-            await play(client, f'./data/greetings/{member.name}', default='./data/greetings/hello.wav')
+            await play(client, f'./data/greetings/{member.name}/')
             # Disconnect from the voice channel
             await vc_disconnect(client)
     elif before.channel is not None and after.channel is None:
@@ -223,7 +233,7 @@ async def on_voice_state_update(member, before, after):
             if config["continue_presence"] and not await is_same_channel(client, channel):
                 return
             # Play audio file
-            await play(client, f'./data/leavings/{member.name}', audio_len=1, default='./data/leavings/bye.wav')
+            await play(client, f'./data/leavings/{member.name}/', audio_len=1)
             # Disconnect from the voice channel
             await vc_disconnect(client)
     elif before.channel != after.channel:
@@ -240,7 +250,7 @@ async def on_voice_state_update(member, before, after):
             if config["continue_presence"] and not await is_same_channel(client, after.channel):
                 return
             # Play audio file
-            await play(client, f'./data/greetings/{member.name}', default='./data/greetings/hello.wav')
+            await play(client, f'./data/greetings/{member.name}/')
             # Disconnect from the voice channel
             await vc_disconnect(client)
     else:
@@ -256,7 +266,7 @@ async def on_voice_state_update(member, before, after):
             if config["continue_presence"] and not await is_same_channel(client, channel):
                 return
             # Play audio file
-            await play(client, f'./data/mutings/{member.name}', default='./data/mutings/muted.wav')
+            await play(client, f'./data/mutings/{member.name}/')
             # Disconnect from the voice channel
             await vc_disconnect(client)
 
@@ -267,14 +277,6 @@ async def on_interaction(interaction):
     # Get audio file name
     audio_file = interaction.data['custom_id']
 
-    # if interaction.data['label'] == stop_button:
-    #     # If audio is playing
-    #     if client.voice_clients and client.voice_clients[0].is_playing():
-    #         client.voice_clients[0].stop()
-    #         await interaction.response.send_message(f'⏹️ Stopped', ephemeral=True, delete_after=2)
-    #     else:
-    #         await interaction.response.send_message(f'⭕ Nothing to stop', ephemeral=True, delete_after=2)
-    # else:
     audio_len = sounds.get(f'./data/audio/{audio_file}', {}).get('duration', 1)  # audio length from cache
     if interaction.user.voice is None:
         await interaction.response.send_message(f'⭕ You are not in voice channel', ephemeral=True, delete_after=2)
